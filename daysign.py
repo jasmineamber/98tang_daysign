@@ -5,7 +5,7 @@ import random
 import requests
 from bs4 import BeautifulSoup
 
-SEHUATANG_HOST = 'www.sehuatang.net'
+SEHUATANG_HOST = os.getenv("SEHUATANG_HOST")
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36'
 
 FID = 103  # 高清中文字幕
@@ -140,24 +140,9 @@ def retrieve_cookies_from_fetch(env: str) -> dict:
 
 def push_notification(title: str, content: str) -> None:
 
-    def telegram_send_message(text: str, chat_id: str, token: str, silent: bool = False) -> None:
-        with requests.post(url=f'https://api.telegram.org/bot{token}/sendMessage',
-                           json={
-                               'chat_id': chat_id,
-                               'text': text,
-                               'disable_notification': silent,
-                               'disable_web_page_preview': True,
-                           }) as r:
-            r.raise_for_status()
+    with requests.get(url=f'https://bark.d2cool.com:8443/NKQGDmoZhjShcCNQCVM6sC/{title}/{content}?icon=https://i.imgtg.com/2023/01/27/S4Kag.png') as r:
+        r.raise_for_status()
 
-    try:
-        from notify import telegram_bot
-        telegram_bot(title, content)
-    except ImportError:
-        chat_id = os.getenv('TG_USER_ID')
-        bot_token = os.getenv('TG_BOT_TOKEN')
-        if chat_id and bot_token:
-            telegram_send_message(f'{title}\n\n{content}', chat_id, bot_token)
 
 
 def main():
@@ -174,19 +159,19 @@ def main():
         raw_html = daysign(cookies=cookies)
 
         if '签到成功' in raw_html:
-            title, message_text = '98堂 每日签到', re.findall(
+            title, message_text = '酒保 每日签到', re.findall(
                 r"'(签到成功.+?)'", raw_html, re.MULTILINE)[0]
         elif '已经签到' in raw_html:
-            title, message_text = '98堂 每日签到', re.findall(
+            title, message_text = '酒保 每日签到', re.findall(
                 r"'(已经签到.+?)'", raw_html, re.MULTILINE)[0]
         elif '需要先登录' in raw_html:
-            title, message_text = '98堂 签到异常', f'Cookie无效或已过期，请重新获取'
+            title, message_text = '酒保 签到异常', f'Cookie无效或已过期，请重新获取'
         else:
-            title, message_text = '98堂 签到异常', raw_html
+            title, message_text = '酒保 签到异常', raw_html
     except IndexError:
-        title, message_text = '98堂 签到异常', f'正则匹配错误'
+        title, message_text = '酒保 签到异常', f'正则匹配错误'
     except Exception as e:
-        title, message_text = '98堂 签到异常', f'错误原因：{e}'
+        title, message_text = '酒保 签到异常', f'错误原因：{e}'
 
     # log to output
     print(message_text)
