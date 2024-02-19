@@ -174,7 +174,7 @@ def retrieve_cookies_from_fetch(env: str) -> dict:
 
 def push_notification(title: str, content: str) -> None:
     with requests.get(
-        url=f"https://bark.d2cool.com:8443/NKQGDmoZhjShcCNQCVM6sC/{title}/{content}?icon=https://i.imgtg.com/2023/01/27/S4Kag.png"
+        url=f"https://bark.d2cool.com:2443/kwBGufVYa6KHDmqjtXoPUm/{title}/{content}?icon=https://i.imgtg.com/2023/01/27/S4Kag.png"
     ) as r:
         r.raise_for_status()
 
