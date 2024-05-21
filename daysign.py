@@ -5,7 +5,9 @@ import time
 import traceback
 
 import requests
+import xml.etree.ElementTree as ET
 from bs4 import BeautifulSoup
+from flaresolverr import FlareSolverrSession
 
 SEHUATANG_HOST = os.getenv("SEHUATANG_HOST")
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
@@ -13,39 +15,47 @@ DEFAULT_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKi
 FID = 103  # 高清中文字幕
 
 AUTO_REPLIES = (
-    "感谢楼主分享好片",
-    "感谢分享！！",
-    "感谢分享感谢分享",
-    "必需支持",
-    "简直太爽了",
-    "感谢分享啊",
-    "封面还不错",
-    "封面还不错，支持一波",
-    "真不错啊",
-    "不错不错",
-    "这身材可以呀",
-    "终于等到你",
-    "不错。。。",
-    "赏心悦目",
-    "快乐无限~~",
-    "這怎麼受的了啊",
-    "谁也挡不住！",
-    "感謝分享",
-    "分享支持。",
-    "这谁顶得住啊",
-    "这是要精尽人亡啊！",
-    "饰演很赞",
-    "這系列真有戲",
-    "感谢大佬分享",
-    "看着不错",
-    "感谢老板分享",
-    "可以看看",
-    "谢谢分享！！！",
+    '感谢楼主分享好片',
+    '感谢分享！！',
+    '感谢分享感谢分享',
+    '必需支持',
+    '简直太爽了',
+    '感谢分享啊',
+    '封面还不错',
+    '有点意思啊',
+    '封面还不错，支持一波',
+    '真不错啊',
+    '不错不错',
+    '这身材可以呀',
+    '终于等到你',
+    '不错。。！',
+    '謝謝辛苦分享',
+    '赏心悦目',
+    '快乐无限~~',
+    '這怎麼受的了啊',
+    '谁也挡不住！',
+    '感謝分享',
+    '分享支持。',
+    '这谁顶得住啊',
+    '这是要精J人亡啊！',
+    '饰演很赞',
+    '這系列真有戲',
+    '感谢大佬分享',
+    '看着不错',
+    '感谢老板分享',
+    '可以看看',
+    '谢谢分享！！！',
 )
 
 
-def daysign(cookies: dict) -> str:
-    with requests.Session() as session:
+def daysign(
+    cookies: dict,
+    flaresolverr_url: str = None,
+    flaresolverr_proxy: str = None,
+) -> bool:
+
+    with (FlareSolverrSession(url=flaresolverr_url, proxy=flaresolverr_proxy)
+          if flaresolverr_url else requests.Session()) as session:
 
         def _request(method, url, *args, **kwargs):
             with session.request(
@@ -71,13 +81,24 @@ def daysign(cookies: dict) -> str:
                 r.raise_for_status()
                 return r
 
-        with _request(
-            method="get",
-            url=f"https://{SEHUATANG_HOST}/forum.php?mod=forumdisplay&fid={FID}",
-        ) as r:
-            tids = re.findall(
-                r"normalthread_(\d+)", r.text, re.MULTILINE | re.IGNORECASE
-            )
+        age_confirmed = False
+        age_retry_cnt = 3
+        while not age_confirmed and age_retry_cnt > 0:
+            with _request(method='get', url=f'https://{SEHUATANG_HOST}/') as r:
+                if (v := re.findall(r"safeid='(\w+)'",
+                                    r.text, re.MULTILINE | re.IGNORECASE)) and (safeid := v[0]):
+                    print(f'set age confirm cookie: _safe={safeid}')
+                    cookies.update({'_safe': safeid})
+                else:
+                    age_confirmed = True
+                age_retry_cnt -= 1
+
+        if not age_confirmed:
+            raise Exception('failed to pass age confirmation')
+
+        with _request(method='get', url=f'https://{SEHUATANG_HOST}/forum.php?mod=forumdisplay&fid={FID}') as r:
+            tids = re.findall(r"normalthread_(\d+)", r.text,
+                              re.MULTILINE | re.IGNORECASE)
             tid = random.choice(tids)
 
         with _request(
@@ -136,6 +157,7 @@ def daysign(cookies: dict) -> str:
                 raise Exception("invalid or empty question!")
             qes = qes_rsl[0]
             ans = eval(qes)
+            print(f'verification question: {qes} = {ans}')
             assert type(ans) == int
 
         # POST: https://www.sehuatang.net/plugin.php?id=dd_sign&mod=sign&signsubmit=yes&signhash=LMAB9&inajax=1
@@ -172,6 +194,21 @@ def retrieve_cookies_from_fetch(env: str) -> dict:
     return dict(s.strip().split("=", maxsplit=1) for s in cookie_str.split(";"))
 
 
+def preprocess_text(text) -> str:
+    if 'xml' not in text:
+        return text
+
+    try:
+        root = ET.fromstring(text)
+        cdata = root.text
+        soup = BeautifulSoup(cdata, 'html.parser')
+        for script in soup.find_all('script'):
+            script.decompose()
+        return soup.get_text()
+    except:
+        return text
+
+
 def push_notification(title: str, content: str) -> None:
     with requests.get(
         url=f"https://bark.d2cool.com:2443/kwBGufVYa6KHDmqjtXoPUm/{title}/{content}?icon=https://i.imgtg.com/2023/01/27/S4Kag.png"
@@ -189,19 +226,20 @@ def main():
         cookies = retrieve_cookies_from_curl("CURL_98TANG")
 
     try:
-        raw_html = daysign(cookies=cookies)
-        if "签到成功" in raw_html:  # type: ignore
-            title, message_text = (
-                "酒保 每日签到",
-                re.findall(r"'(签到成功.+?)'", raw_html, re.MULTILINE)[0],
-            )
-        elif "已经签到" in raw_html:  # type: ignore
-            title, message_text = (
-                "酒保 每日签到",
-                re.findall(r"'(已经签到.+?)'", raw_html, re.MULTILINE)[0],
-            )
-        elif "需要先登录" in raw_html:
-            title, message_text = "酒保 签到异常", f"Cookie无效或已过期，请重新获取"
+        raw_html = daysign(
+            cookies=cookies,
+            flaresolverr_url=os.getenv('FLARESOLVERR_URL'),
+            flaresolverr_proxy=os.getenv('FLARESOLVERR_PROXY'),
+        )
+
+        if '签到成功' in raw_html:
+            title, message_text = '98堂 每日签到', re.findall(
+                r"'(签到成功.+?)'", raw_html, re.MULTILINE)[0]
+        elif '已经签到' in raw_html:
+            title, message_text = '98堂 每日签到', re.findall(
+                r"'(已经签到.+?)'", raw_html, re.MULTILINE)[0]
+        elif '需要先登录' in raw_html:
+            title, message_text = '98堂 签到异常', f'Cookie无效或已过期，请重新获取'
         else:
             title, message_text = "酒保 签到异常", raw_html
     except IndexError:
@@ -210,6 +248,9 @@ def main():
         title, message_text = "98堂 签到异常", f"错误原因：{e}"
         # log detailed error message
         traceback.print_exc()
+
+    # process message data
+    message_text = preprocess_text(message_text)
 
     # log to output
     print(message_text)
