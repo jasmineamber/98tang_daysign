@@ -233,19 +233,19 @@ def main():
         )
 
         if '签到成功' in raw_html:
-            title, message_text = '98堂 每日签到', re.findall(
+            title, message_text = '酒保 每日签到', re.findall(
                 r"'(签到成功.+?)'", raw_html, re.MULTILINE)[0]
         elif '已经签到' in raw_html:
-            title, message_text = '98堂 每日签到', re.findall(
+            title, message_text = '酒保 每日签到', re.findall(
                 r"'(已经签到.+?)'", raw_html, re.MULTILINE)[0]
         elif '需要先登录' in raw_html:
-            title, message_text = '98堂 签到异常', f'Cookie无效或已过期，请重新获取'
+            title, message_text = '酒保 签到异常', f'Cookie无效或已过期，请重新获取'
         else:
             title, message_text = "酒保 签到异常", raw_html
     except IndexError:
         title, message_text = "酒保 签到异常", f"正则匹配错误"
     except Exception as e:
-        title, message_text = "98堂 签到异常", f"错误原因：{e}"
+        title, message_text = "酒保 签到异常", f"错误原因：{e}"
         # log detailed error message
         traceback.print_exc()
 
