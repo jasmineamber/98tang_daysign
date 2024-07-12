@@ -2,12 +2,13 @@ import os
 import random
 import re
 import time
+import httpx
 import traceback
-
-import requests
-import xml.etree.ElementTree as ET
+import random
+from contextlib import contextmanager
 from bs4 import BeautifulSoup
-from flaresolverr import FlareSolverrSession
+from xml.etree import ElementTree as ET
+from flaresolverr import FlareSolverrHTTPClient
 
 SEHUATANG_HOST = os.getenv("SEHUATANG_HOST")
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
@@ -54,32 +55,33 @@ def daysign(
     flaresolverr_proxy: str = None,
 ) -> bool:
 
-    with (FlareSolverrSession(url=flaresolverr_url, proxy=flaresolverr_proxy)
-          if flaresolverr_url else requests.Session()) as session:
+    with (FlareSolverrHTTPClient(url=flaresolverr_url,
+                                 proxy=flaresolverr_proxy,
+                                 cookies=cookies,
+                                 http2=True)
+          if flaresolverr_url else httpx.Client(cookies=cookies, http2=True)) as client:
 
+        @contextmanager
         def _request(method, url, *args, **kwargs):
-            with session.request(
-                method=method,
-                url=url,
-                cookies=cookies,
-                headers={
-                    "user-agent": DEFAULT_USER_AGENT,
-                    "x-requested-with": "XMLHttpRequest",
-                    "dnt": "1",
-                    "accept": "*/*",
-                    "sec-ch-ua-mobile": "?0",
-                    "sec-ch-ua-platform": "macOS",
-                    "sec-fetch-site": "same-origin",
-                    "sec-fetch-mode": "cors",
-                    "sec-fetch-dest": "empty",
-                    "referer": f"https://{SEHUATANG_HOST}/plugin.php?id=dd_sign&mod=sign",
-                    "accept-language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-                },
-                *args,
-                **kwargs,
-            ) as r:
+            r = client.request(method=method, url=url,
+                               headers={
+                                   'user-agent': DEFAULT_USER_AGENT,
+                                   'x-requested-with': 'XMLHttpRequest',
+                                   'dnt': '1',
+                                   'accept': '*/*',
+                                   'sec-ch-ua-mobile': '?0',
+                                   'sec-ch-ua-platform': 'macOS',
+                                   'sec-fetch-site': 'same-origin',
+                                   'sec-fetch-mode': 'cors',
+                                   'sec-fetch-dest': 'empty',
+                                   'referer': f'https://{SEHUATANG_HOST}/plugin.php?id=dd_sign&mod=sign',
+                                   'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+                               }, *args, **kwargs)
+            try:
                 r.raise_for_status()
-                return r
+                yield r
+            finally:
+                r.close()
 
         age_confirmed = False
         age_retry_cnt = 3
@@ -88,7 +90,7 @@ def daysign(
                 if (v := re.findall(r"safeid='(\w+)'",
                                     r.text, re.MULTILINE | re.IGNORECASE)) and (safeid := v[0]):
                     print(f'set age confirm cookie: _safe={safeid}')
-                    cookies.update({'_safe': safeid})
+                    client.cookies.set(name='_safe', value=safeid)
                 else:
                     age_confirmed = True
                 age_retry_cnt -= 1
@@ -100,6 +102,7 @@ def daysign(
             tids = re.findall(r"normalthread_(\d+)", r.text,
                               re.MULTILINE | re.IGNORECASE)
             tid = random.choice(tids)
+            print(f'choose tid = {tid} to comment')
 
         with _request(
             method="get",
@@ -109,42 +112,42 @@ def daysign(
             formhash = soup.find("input", {"name": "formhash"})["value"]  # type: ignore
 
         message = random.choice(AUTO_REPLIES)
-        print(f"comment to: tid = {tid}, message = {message}")
 
-        with _request(
-            method="post",
-            url=f"https://{SEHUATANG_HOST}/forum.php?mod=post&action=reply&fid={FID}&tid={tid}&extra=page%3D1&replysubmit=yes&infloat=yes&handlekey=fastpost&inajax=1",
-            data={
-                "file": "",
-                "message": message,
-                "posttime": int(time.time()),
-                "formhash": formhash,
-                "usesig": "",
-                "subject": "",
-            },
-        ) as r:
-            r.raise_for_status()
+        with _request(method='post', url=f'https://{SEHUATANG_HOST}/forum.php?mod=post&action=reply&fid={FID}&tid={tid}&extra=page%3D1&replysubmit=yes&infloat=yes&handlekey=fastpost&inajax=1',
+                      data={
+                          'file': '',
+                          'message': message,
+                          'posttime': int(time.time()),
+                          'formhash': formhash,
+                          'usesig': '',
+                          'subject': '',
+                      }) as r:
+            print(f'comment to: tid = {tid}, message = {message}')
 
-        with _request(
-            method="get", url=f"https://{SEHUATANG_HOST}/plugin.php?id=dd_sign&mod=sign"
-        ) as r:
-            id_hash_rsl = re.findall(
-                r"updatesecqaa\('(.*?)'", r.text, re.MULTILINE | re.IGNORECASE
-            )
-            id_hash = id_hash_rsl[0] if id_hash_rsl else "qS0"  # default value
+        with _request(method='get', url=f'https://{SEHUATANG_HOST}/plugin.php?id=dd_sign&mod=sign') as r:
+            # id_hash_rsl = re.findall(
+            #     r"updatesecqaa\('(.*?)'", r.text, re.MULTILINE | re.IGNORECASE)
+            # id_hash = id_hash_rsl[0] if id_hash_rsl else 'qS0'  # default value
 
-            soup = BeautifulSoup(r.text, "html.parser")
-            formhash = soup.find("input", {"name": "formhash"})["value"]  # type: ignore
+            # soup = BeautifulSoup(r.text, 'html.parser')
+            # formhash = soup.find('input', {'name': 'formhash'})['value']
             # signtoken = soup.find('input', {'name': 'signtoken'})['value']
             # action = soup.find('form', {'name': 'login'})['action']
+            pass
 
-        with _request(
-            method="get",
-            url=f"https://{SEHUATANG_HOST}/plugin.php?id=dd_sign&ac=sign&infloat=yes&handlekey=pc_click_ddsign&inajax=1&ajaxtarget=fwin_content_pc_click_ddsign",
-        ) as r:
-            soup = BeautifulSoup(r.text, "xml")
-            root = BeautifulSoup(soup.find("root").string, "html.parser")  # type: ignore
-            action = root.find("form", {"name": "login"})["action"]  # type: ignore
+        with _request(method='get', url=f'https://{SEHUATANG_HOST}/plugin.php?id=dd_sign&ac=sign&infloat=yes&handlekey=pc_click_ddsign&inajax=1&ajaxtarget=fwin_content_pc_click_ddsign') as r:
+            soup = BeautifulSoup(r.text, 'xml')
+            html = soup.find('root').string
+            # extract argument values from signform
+            root = BeautifulSoup(html, 'html.parser')
+            id_hash = (root.find('span', id=re.compile(r'^secqaa_'))
+                       ['id']).removeprefix('secqaa_')
+            formhash = root.find('input', {'name': 'formhash'})['value']
+            signtoken = root.find('input', {'name': 'signtoken'})['value']
+            action = root.find('form', {'name': 'login'})['action']
+            print(
+                f'signform values: id_hash={id_hash}, formhash={formhash}, signtoken={signtoken}')
+            print(f'action href: {action}')
 
         # GET: https://www.sehuatang.net/misc.php?mod=secqaa&action=update&idhash=qS0&0.2010053552105764
         with _request(
@@ -161,16 +164,11 @@ def daysign(
             assert type(ans) == int
 
         # POST: https://www.sehuatang.net/plugin.php?id=dd_sign&mod=sign&signsubmit=yes&signhash=LMAB9&inajax=1
-        with _request(
-            method="post",
-            url=f'https://{SEHUATANG_HOST}/{action.lstrip("/")}&inajax=1',  # type: ignore
-            data={
-                "formhash": formhash,
-                "signtoken": "",
-                "secqaahash": id_hash,
-                "secanswer": ans,
-            },
-        ) as r:
+        with _request(method='post', url=f'https://{SEHUATANG_HOST}/{action.lstrip("/")}&inajax=1',
+                      data={'formhash': formhash,
+                            'signtoken': signtoken,
+                            'secqaahash': id_hash,
+                            'secanswer': ans}) as r:
             return r.text
 
 
@@ -210,10 +208,10 @@ def preprocess_text(text) -> str:
 
 
 def push_notification(title: str, content: str) -> None:
-    with requests.get(
+    r = httpx.get(
         url=f"https://bark.d2cool.com:2443/kwBGufVYa6KHDmqjtXoPUm/{title}/{content}?icon=https://i.imgtg.com/2023/01/27/S4Kag.png"
-    ) as r:
-        r.raise_for_status()
+    )
+    r.raise_for_status()
 
 
 def main():
