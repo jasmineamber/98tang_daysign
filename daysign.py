@@ -226,7 +226,7 @@ def preprocess_text(text) -> str:
 
 def push_notification(title: str, content: str) -> None:
     r = httpx.get(
-        url=f"https://bark.d2cool.com:2443/kwBGufVYa6KHDmqjtXoPUm/{title}/{content}?icon=https://i.imgtg.com/2023/01/27/S4Kag.png"
+        url=f"{os.getenv('BARK')}/{title}/{content}?icon=https://i.imgtg.com/2023/01/27/S4Kag.png"
     )
     r.raise_for_status()
 
