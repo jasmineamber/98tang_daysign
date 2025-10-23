@@ -231,12 +231,14 @@ def push_notification(title: str, content: str) -> None:
     r.raise_for_status()
 
 
-def main():
+def main(index):
     raw_html = None
     cookies = {}
+    cookies_key = f"FETCH_98TANG_{index}"
+    prefix_message = f"酒保{index} "
 
-    if os.getenv("FETCH_98TANG"):
-        cookies = retrieve_cookies_from_fetch("FETCH_98TANG")
+    if os.getenv(cookies_key):
+        cookies = retrieve_cookies_from_fetch(cookies_key)
     elif os.getenv("CURL_98TANG"):
         cookies = retrieve_cookies_from_curl("CURL_98TANG")
 
@@ -248,19 +250,19 @@ def main():
         )
 
         if '签到成功' in raw_html:
-            title, message_text = '酒保 每日签到', re.findall(
+            title, message_text = f'{prefix_message}每日签到', re.findall(
                 r"'(签到成功.+?)'", raw_html, re.MULTILINE)[0]
         elif '已经签到' in raw_html:
-            title, message_text = '酒保 每日签到', re.findall(
+            title, message_text = f'{prefix_message}每日签到', re.findall(
                 r"'(已经签到.+?)'", raw_html, re.MULTILINE)[0]
         elif '需要先登录' in raw_html:
-            title, message_text = '酒保 签到异常', f'Cookie无效或已过期，请重新获取'
+            title, message_text = f'{prefix_message}签到异常', f'Cookie无效或已过期，请重新获取'
         else:
-            title, message_text = "酒保 签到异常", raw_html
+            title, message_text = f"{prefix_message}签到异常", raw_html
     except IndexError:
-        title, message_text = "酒保 签到异常", f"正则匹配错误"
+        title, message_text = f"{prefix_message}签到异常", f"正则匹配错误"
     except Exception as e:
-        title, message_text = "酒保 签到异常", f"错误原因：{e}"
+        title, message_text = f"{prefix_message}签到异常", f"错误原因：{e}"
         # log detailed error message
         traceback.print_exc()
 
@@ -275,4 +277,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    for i in range(3):
+        index = i + 1
+        main(index)
